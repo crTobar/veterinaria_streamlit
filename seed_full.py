@@ -1,31 +1,44 @@
 import random
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from faker import Faker
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from app import models
 from app.database import SessionLocal, engine
-from sqlalchemy import func
+# --- AÑADIR 'auth' PARA HASHEAR CONTRASEÑAS ---
+from app import auth 
 
-
-# ¡Importante! Este script asume que todas las migraciones (M1-M5)
+# ¡Importante! Este script asume que todas las migraciones (M1-M6)
 # ya han sido aplicadas con 'alembic upgrade head'.
 
 fake = Faker()
 db: Session = SessionLocal()
 
 try:
-    print("Iniciando población completa de la base de datos (Post-Migraciones)...")
+    print("Iniciando población completa de la base de datos (Post-Migraciones M6)...")
 
-    # --- 1. Crear Veterinarios (con campos M5) ---
+    # --- 1. Crear Veterinarios (con campos M5 y M6) ---
     print("Creando veterinarios...")
     vets = []
+    
+    # --- LÓGICA DE CONTRASEÑA AÑADIDA ---
+    default_password_plain = "admin123"
+    default_hashed_password = auth.get_password_hash(default_password_plain)
+    print(f"Usando contraseña por defecto hasheada para todos los veterinarios: {default_password_plain}")
+    # -----------------------------------
+
     for _ in range(10):
         vet = models.Veterinarian(
             license_number=fake.unique.bothify(text='VET-#####-??'),
             first_name=fake.first_name(),
             last_name=fake.last_name(),
             email=fake.unique.email(),
+            
+            # --- AÑADIR ESTE CAMPO OBLIGATORIO ---
+            hashed_password=default_hashed_password,
+            # ------------------------------------
+
             phone=fake.phone_number()[:50],
             specialization=random.choice(['Cirugía', 'Dermatología', 'Medicina Interna', 'Oncología', 'General']),
             hire_date=fake.date_between(start_date='-5y', end_date='today'),
@@ -99,12 +112,15 @@ try:
     print(f"{len(vaccines)} tipos de vacunas creados.")
     vaccine_ids = [v.vaccine_id for v in vaccines]
 
-    # --- 5. Crear Citas (v1.0) ---
+    # --- 5. Crear Citas (v1.0 y M6) ---
     print("Creando citas...")
     appointments = []
     for _ in range(50):
+        # Lógica M6: 1 de cada 10 citas será de emergencia (sin pet_id)
+        pet_id_or_none = random.choice(pet_ids) if random.randint(1, 10) != 1 else None
+        
         appt = models.Appointment(
-            pet_id=random.choice(pet_ids),
+            pet_id=pet_id_or_none,
             veterinarian_id=random.choice(vet_ids),
             appointment_date=fake.date_time_between(start_date='-2y', end_date='+1m'),
             reason=fake.sentence(nb_words=5),
@@ -146,7 +162,7 @@ try:
             subtotal=subtotal,
             tax_amount=tax.quantize(Decimal('0.01')),
             total_amount=total.quantize(Decimal('0.01')),
-            payment_status=random.choice(['paid', 'pending']), # Algunas retroactivas pueden estar pendientes
+            payment_status=random.choice(['paid', 'pending']),
             payment_date=appt.appointment_date if random.choice([True, False]) else None
         )
         invoices.append(invoice)

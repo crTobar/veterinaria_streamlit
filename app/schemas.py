@@ -71,6 +71,7 @@ class VeterinarianBase(BaseModel):
     rating: Optional[Decimal] = Field(None, ge=0, le=5, decimal_places=2)
 
 class VeterinarianCreate(VeterinarianBase):
+    password: str
     pass
 
 class VeterinarianUpdate(BaseModel):
@@ -89,7 +90,7 @@ class VeterinarianUpdate(BaseModel):
 class Veterinarian(VeterinarianBase):
     veterinarian_id: int
     # --- M5 ---
-  #  total_appointments: int
+    total_appointments: int
     class Config:
         from_attributes = True
 
@@ -287,6 +288,34 @@ class VaccinationAlertReport(BaseModel):
     pet: PetSimple
     vaccine: Vaccine
     next_dose_date: date
+
+class Token(BaseModel):
+    """
+    Schema de respuesta cuando el login es exitoso.
+    Devuelve el token y el tipo ("bearer").
+    """
+    access_token: str
+    token_type: str
+
+class TokenData(BaseModel):
+    """
+    Schema para los datos que están DENTRO del token JWT.
+    """
+    email: Optional[str] = None
+
+class LoginRequest(BaseModel):
+    """
+    Schema para el body de la petición /login.
+    Usa 'username' que será el email del veterinario.
+    """
+    username: EmailStr
+    password: str
+
+class PasswordRecoveryRequest(BaseModel):
+    """
+    Schema para el body de /recover-password
+    """
+    email: EmailStr
 
 # --- Reconstrucción de Modelos ---
 # (Necesario para que Pydantic maneje las referencias circulares/forward)

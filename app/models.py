@@ -12,15 +12,18 @@ class Veterinarian(Base):
     first_name = Column(String(100), nullable=False)
     last_name = Column(String(100), nullable=False)
     email = Column(String(255), unique=True, nullable=False, index=True)
+    #--- ESTA LÍNEA (M6: Auth) ---
+    hashed_password = Column(String(255), nullable=True)
+
     phone = Column(String(30))
     specialization = Column(String(200))
     hire_date = Column(Date, nullable=False, default=func.current_date())
     is_active = Column(Boolean, default=True)
 
     # --- ESTAS LÍNEAS (M5) ---
-  #  consultation_fee = Column(Numeric(8, 2), nullable=True) # Tarifa por consulta
-   # rating = Column(Numeric(3, 2), nullable=True) # Calificación promedio
-    #total_appointments = Column(Integer, nullable=False, default=0) # Contador de citas
+    consultation_fee = Column(Numeric(8, 2), nullable=True) # Tarifa por consulta
+    rating = Column(Numeric(3, 2), nullable=True) # Calificación promedio
+    total_appointments = Column(Integer, nullable=False, default=0) # Contador de citas
     
     # Relación: Un veterinario tiene muchas citas
     appointments = relationship("Appointment", back_populates="veterinarian")
@@ -81,7 +84,7 @@ class Appointment(Base):
     appointment_id = Column(Integer, primary_key=True, index=True)
     
     # Foreign Keys
-    pet_id = Column(Integer, ForeignKey("pets.pet_id"), nullable=False)
+    pet_id = Column(Integer, ForeignKey("pets.pet_id"), nullable=True)
     veterinarian_id = Column(Integer, ForeignKey("veterinarians.veterinarian_id"), nullable=False)
     
     appointment_date = Column(TIMESTAMP, nullable=False)

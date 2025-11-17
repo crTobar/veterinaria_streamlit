@@ -5,3 +5,11 @@ psycopg2-binary
 pydantic[email]
 alembic      
 Faker       
+
+passlib
+bcrypt==4.0.1
+python-jose[cryptography]
+slowapi
+redis
+fastapi-limiter
+python-multipart

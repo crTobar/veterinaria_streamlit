@@ -13,5 +13,12 @@ services:
     volumes:
       - postgres_clinica_data:/var/lib/postgresql/data/
 
+  # --- NUEVO SERVICIO ---
+  redis:
+    image: redis:7-alpine
+    container_name: clinica_redis_cache
+    ports:
+      - "6379:6379"
+
 volumes:
   postgres_clinica_data:

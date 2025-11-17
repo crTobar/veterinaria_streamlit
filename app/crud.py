@@ -158,13 +158,13 @@ def create_appointment(db: Session, appt: schemas.AppointmentCreate):
     db_appt = models.Appointment(**appt.model_dump())
     
     # --- LÓGICA M5 ---
-#    db_pet.visit_count += 1
- #   db_pet.last_visit_date = appt.appointment_date.date()
-  #  db_vet.total_appointments += 1
+    db_pet.visit_count += 1
+    db_pet.last_visit_date = appt.appointment_date.date()
+    db_vet.total_appointments += 1
     
-#    db.add(db_appt)
-#   db.add(db_pet)
-#    db.add(db_vet)
+    db.add(db_appt)
+    db.add(db_pet)
+    db.add(db_vet)
     # -----------------
     
     db.commit()
