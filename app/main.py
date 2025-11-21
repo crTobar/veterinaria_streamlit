@@ -285,10 +285,24 @@ def read_pet_vaccination_schedule(request: Request, pet_id: int, db: Session = D
 @app.post("/appointments/", response_model=schemas.Appointment, status_code=status.HTTP_201_CREATED, tags=["Appointments"])
 @limiter.limit("100/minute")
 def create_appointment(request: Request, appt: schemas.AppointmentCreate, db: Session = DbDep, current_user: models.Veterinarian = ActiveUserDep):
+    
+    # --- CORRECCIÓN PARA EMERGENCIAS ---
+    # Solo verificamos la mascota si pet_id NO es None
+    if appt.pet_id is not None:
+        if not crud.get_pet(db, pet_id=appt.pet_id):
+             raise HTTPException(status_code=404, detail=f"Pet with id {appt.pet_id} not found")
+    # -----------------------------------
+
+    if not crud.get_veterinarian(db, vet_id=appt.veterinarian_id):
+        raise HTTPException(status_code=404, detail=f"Veterinarian with id {appt.veterinarian_id} not found")
+    
+    # Intenta crear la cita
     created_appt = crud.create_appointment(db=db, appt=appt)
+    
     if created_appt is None:
-        raise HTTPException(status_code=404, detail="Pet or Veterinarian not found")
-    # Recargar para obtener relaciones
+        # Si crud.create_appointment devuelve None, algo falló internamente
+        raise HTTPException(status_code=400, detail="Could not create appointment")
+    
     return crud.get_appointment(db, created_appt.appointment_id)
 
 @app.get("/appointments/", response_model=List[schemas.Appointment], tags=["Appointments"])
@@ -412,6 +426,38 @@ def create_vaccine(request: Request, vaccine: schemas.VaccineCreate, db: Session
 def read_vaccines(request: Request, skip: int = 0, limit: int = 100, db: Session = DbDep, current_user: models.Veterinarian = ActiveUserDep):
     return crud.get_vaccines(db, skip=skip, limit=limit)
 
+@app.put("/vaccines/{vaccine_id}", response_model=schemas.Vaccine, tags=["Vaccines"])
+@limiter.limit("100/minute")
+def update_vaccine(request: Request, vaccine_id: int, vaccine: schemas.VaccineCreate, db: Session = DbDep, current_user: models.Veterinarian = ActiveUserDep):
+    db_vaccine = crud.get_vaccine(db, vaccine_id=vaccine_id)
+    if db_vaccine is None:
+        raise HTTPException(status_code=404, detail="Vaccine not found")
+    
+    # Usamos update_db_item que ya tienes en crud.py, aunque no haya un update_vaccine específico
+    # Podemos hacerlo manual o crear la función en crud. 
+    # Opción rápida (usando lógica existente):
+    update_data = vaccine.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(db_vaccine, key, value)
+    db.commit()
+    db.refresh(db_vaccine)
+    return db_vaccine
+
+@app.delete("/vaccines/{vaccine_id}", response_model=schemas.Vaccine, tags=["Vaccines"])
+@limiter.limit("100/minute")
+def delete_vaccine(request: Request, vaccine_id: int, db: Session = DbDep, current_user: models.Veterinarian = ActiveUserDep):
+    db_vaccine = crud.get_vaccine(db, vaccine_id=vaccine_id)
+    if db_vaccine is None:
+        raise HTTPException(status_code=404, detail="Vaccine not found")
+    
+    # Verificar si se usa en registros (opcional pero recomendado)
+    if db_vaccine.vaccination_records:
+         raise HTTPException(status_code=400, detail="Cannot delete vaccine used in vaccination records")
+
+    db.delete(db_vaccine)
+    db.commit()
+    return db_vaccine
+
 
 # === Endpoints Vaccination Records (M2) ===
 @app.post("/vaccination-records/", response_model=schemas.VaccinationRecord, status_code=status.HTTP_201_CREATED, tags=["Vaccination Records"])
@@ -431,6 +477,22 @@ def create_vaccination_record(request: Request, record: schemas.VaccinationRecor
 @limiter.limit("100/minute")
 def read_vaccination_records(request: Request, skip: int = 0, limit: int = 100, db: Session = DbDep, current_user: models.Veterinarian = ActiveUserDep):
     return crud.get_vaccination_records(db, skip=skip, limit=limit)
+
+@app.put("/vaccination-records/{record_id}", response_model=schemas.VaccinationRecord, tags=["Vaccination Records"])
+@limiter.limit("100/minute")
+def update_vaccination_record(request: Request, record_id: int, record: schemas.VaccinationRecordCreate, db: Session = DbDep, current_user: models.Veterinarian = ActiveUserDep):
+    db_record = crud.get_vaccination_record(db, record_id=record_id)
+    if db_record is None:
+        raise HTTPException(status_code=404, detail="Vaccination record not found")
+    return crud.update_vaccination_record(db=db, db_record=db_record, record_update=record)
+
+@app.delete("/vaccination-records/{record_id}", response_model=schemas.VaccinationRecord, tags=["Vaccination Records"])
+@limiter.limit("100/minute")
+def delete_vaccination_record(request: Request, record_id: int, db: Session = DbDep, current_user: models.Veterinarian = ActiveUserDep):
+    db_record = crud.get_vaccination_record(db, record_id=record_id)
+    if db_record is None:
+        raise HTTPException(status_code=404, detail="Vaccination record not found")
+    return crud.delete_vaccination_record(db=db, db_record=db_record)
 
 
 # === Endpoints Invoices (M4) ===
@@ -461,6 +523,46 @@ def pay_invoice(request: Request, invoice_id: int, db: Session = DbDep, current_
     if db_invoice.payment_status == 'paid':
         raise HTTPException(status_code=400, detail="Invoice is already paid")
     return crud.mark_invoice_as_paid(db=db, db_invoice=db_invoice)
+
+
+@app.post("/invoices/", response_model=schemas.Invoice, status_code=status.HTTP_201_CREATED, tags=["Invoices"])
+@limiter.limit("100/minute")
+def create_invoice(request: Request, invoice: schemas.InvoiceCreate, db: Session = DbDep, current_user: models.Veterinarian = ActiveUserDep):
+    # Validaciones opcionales (ej. verificar si la cita existe)
+    if invoice.appointment_id and not crud.get_appointment(db, appt_id=invoice.appointment_id):
+         raise HTTPException(status_code=404, detail="Appointment not found")
+    
+    # Verificar duplicados de número de factura
+    # (Necesitarías una función get_invoice_by_number en crud, o confiar en el error de BD)
+    
+    return crud.create_invoice(db=db, invoice=invoice)
+
+@app.put("/invoices/{invoice_id}", response_model=schemas.Invoice, tags=["Invoices"])
+@limiter.limit("100/minute")
+def update_invoice(request: Request, invoice_id: int, invoice: schemas.InvoiceUpdate, db: Session = DbDep, current_user: models.Veterinarian = ActiveUserDep):
+    db_invoice = crud.get_invoice(db, invoice_id=invoice_id)
+    if db_invoice is None:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    
+    # Usamos la función genérica de update
+    update_data = invoice.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(db_invoice, key, value)
+    
+    db.commit()
+    db.refresh(db_invoice)
+    return db_invoice
+
+@app.delete("/invoices/{invoice_id}", response_model=schemas.Invoice, tags=["Invoices"])
+@limiter.limit("100/minute")
+def delete_invoice(request: Request, invoice_id: int, db: Session = DbDep, current_user: models.Veterinarian = ActiveUserDep):
+    db_invoice = crud.get_invoice(db, invoice_id=invoice_id)
+    if db_invoice is None:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    
+    db.delete(db_invoice)
+    db.commit()
+    return db_invoice
 
 
 # === Endpoints Reports (M5) ===

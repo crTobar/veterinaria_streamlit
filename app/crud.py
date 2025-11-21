@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, extract
-from . import models, schemas
+from . import models, schemas, auth
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 
@@ -26,7 +26,18 @@ def get_veterinarians(db: Session, skip: int = 0, limit: int = 100):
     return db.query(models.Veterinarian).offset(skip).limit(limit).all()
 
 def create_veterinarian(db: Session, vet: schemas.VeterinarianCreate):
-    db_vet = models.Veterinarian(**vet.model_dump())
+    """
+    Crea un nuevo veterinario y hashea su contraseña.
+    """
+    # 1. Obtener el hash de la contraseña en texto plano
+    hashed_password = auth.get_password_hash(vet.password)
+    
+    # 2. Crear un diccionario con los datos del schema, excluyendo la contraseña
+    vet_data = vet.model_dump(exclude={'password'})
+    
+    # 3. Crear el objeto del modelo Veterinarian, pasando el HASH en lugar del texto plano
+    db_vet = models.Veterinarian(**vet_data, hashed_password=hashed_password)
+    
     db.add(db_vet)
     db.commit()
     db.refresh(db_vet)
@@ -147,26 +158,38 @@ def get_appointments(db: Session, skip: int = 0, limit: int = 100):
         joinedload(models.Appointment.veterinarian)
     ).order_by(models.Appointment.appointment_date.desc()).offset(skip).limit(limit).all()
 
+# app/crud.py
+
 def create_appointment(db: Session, appt: schemas.AppointmentCreate):
-    """Crea una nueva cita y actualiza las métricas (M5)."""
-    db_pet = get_pet(db, pet_id=appt.pet_id)
+    # ...
+    
+    # --- CORRECCIÓN EN CRUD ---
+    db_pet = None
+    if appt.pet_id is not None:
+        db_pet = get_pet(db, pet_id=appt.pet_id)
+        
     db_vet = get_veterinarian(db, vet_id=appt.veterinarian_id)
     
-    if not db_pet or not db_vet:
-        return None 
+    # Si es emergencia (db_pet es None), permitimos continuar solo si db_vet existe
+    if not db_vet:
+        return None
+    
+    if appt.pet_id is not None and not db_pet:
+        return None # Si se dio un ID pero no existe, error.
 
     db_appt = models.Appointment(**appt.model_dump())
     
     # --- LÓGICA M5 ---
-    db_pet.visit_count += 1
-    db_pet.last_visit_date = appt.appointment_date.date()
+    if db_pet: # Solo actualizar métricas de mascota si existe
+        db_pet.visit_count += 1
+        db_pet.last_visit_date = appt.appointment_date.date()
+        db.add(db_pet)
+        
     db_vet.total_appointments += 1
-    
-    db.add(db_appt)
-    db.add(db_pet)
     db.add(db_vet)
     # -----------------
     
+    db.add(db_appt)
     db.commit()
     db.refresh(db_appt)
     return db_appt
@@ -280,7 +303,20 @@ def get_vaccination_schedule_by_pet(db: Session, pet_id: int):
         models.VaccinationRecord.next_dose_date >= today
     ).order_by(models.VaccinationRecord.next_dose_date.asc()).all()
 
-# --- CRUD Invoices (M4) ---
+def update_vaccination_record(db: Session, db_record: models.VaccinationRecord, record_update: schemas.VaccinationRecordCreate):
+    # Usamos la función genérica update_db_item que ya tienes
+    db_record = update_db_item(db_record, record_update)
+    db.commit()
+    db.refresh(db_record)
+    return db_record
+
+def delete_vaccination_record(db: Session, db_record: models.VaccinationRecord):
+    db.delete(db_record)
+    db.commit()
+    return db_record
+
+#--- CRUD Invoices (Migración 4) ---
+
 def get_invoice(db: Session, invoice_id: int):
     return db.query(models.Invoice).options(
         joinedload(models.Invoice.appointment).joinedload(models.Appointment.pet)
@@ -295,6 +331,14 @@ def get_pending_invoices(db: Session, skip: int = 0, limit: int = 100):
     return db.query(models.Invoice).filter(
         models.Invoice.payment_status.in_(['pending', 'overdue'])
     ).order_by(models.Invoice.issue_date.desc()).offset(skip).limit(limit).all()
+
+def create_invoice(db: Session, invoice: schemas.InvoiceCreate):
+    db_invoice = models.Invoice(**invoice.model_dump())
+    db.add(db_invoice)
+    db.commit()
+    db.refresh(db_invoice)
+    return db_invoice
+# ----------------------------------------
 
 def mark_invoice_as_paid(db: Session, db_invoice: models.Invoice):
     db_invoice.payment_status = 'paid'

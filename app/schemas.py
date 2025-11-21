@@ -165,7 +165,7 @@ class Pet(PetBase):
 
 # --- Appointments ---
 class AppointmentBase(BaseModel):
-    pet_id: int
+    pet_id: Optional[int] = None
     veterinarian_id: int
     appointment_date: datetime
     reason: Optional[str] = None
@@ -186,8 +186,8 @@ class AppointmentUpdate(BaseModel):
 class Appointment(AppointmentBase):
     appointment_id: int
     created_at: datetime
-    pet: PetSimple
-    veterinarian: VeterinarianSimple
+    pet: Optional[PetSimple] = None
+    veterinarian: Optional[VeterinarianSimple] = None
     # 'invoice' se añade más abajo para evitar error de referencia
     
     class Config:
